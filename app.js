@@ -81,11 +81,11 @@ async function translateToAllLanguages(text) {
         // 偵測語言
         const detectedLang = detectLanguageCode(text);
         console.log('偵測語言結果:', detectedLang);
-        
+
         // 翻譯到三種目標語言
-        const zhPromise = translateText(text, 'zh-TW');
-        const enPromise = translateText(text, 'en');
-        const jaPromise = translateText(text, 'ja');
+        const zhPromise = translateLongText(text, 'zh-TW');
+        const enPromise = translateLongText(text, 'en');
+        const jaPromise = translateLongText(text, 'ja');
         
         // 並行處理所有翻譯請求
         const results = await Promise.allSettled([zhPromise, enPromise, jaPromise]);
@@ -125,6 +125,69 @@ function detectLanguageCode(text) {
         console.error('語言偵測錯誤 (detectLanguageCode):', error);
         return "en"; // 出錯時默認為英文
     }
+}
+
+// 分割長文本為較小的段落
+function splitTextForTranslation(text) {
+    // 如果文本較短，直接返回
+    if (text.length < 1000) return [text];
+    
+    // 按段落分割
+    let paragraphs = text.split(/\n\s*\n/);
+    
+    // 如果段落仍然太長，按句子分割
+    let chunks = [];
+    for (let para of paragraphs) {
+        if (para.length < 1000) {
+            chunks.push(para);
+        } else {
+            // 按句號、問號、感嘆號等分割
+            let sentences = para.split(/(?<=[.!?])\s+/);
+            let currentChunk = "";
+            
+            for (let sentence of sentences) {
+                if ((currentChunk + sentence).length < 950) {
+                    currentChunk += (currentChunk ? " " : "") + sentence;
+                } else {
+                    if (currentChunk) chunks.push(currentChunk);
+                    currentChunk = sentence;
+                }
+            }
+            
+            if (currentChunk) chunks.push(currentChunk);
+        }
+    }
+    
+    return chunks.length > 0 ? chunks : [text];
+}
+
+// 翻譯長文本，分段處理
+async function translateLongText(text, targetLang) {
+    // 分割文本
+    const chunks = splitTextForTranslation(text);
+    console.log(`將長文本分為 ${chunks.length} 個塊進行翻譯`);
+    
+    // 如果只有一個塊，直接翻譯
+    if (chunks.length === 1) {
+        return await translateText(text, targetLang);
+    }
+    
+    // 翻譯每個塊
+    let translatedChunks = [];
+    for (let i = 0; i < chunks.length; i++) {
+        try {
+            console.log(`翻譯塊 ${i+1}/${chunks.length}...`);
+            const translatedChunk = await translateText(chunks[i], targetLang);
+            translatedChunks.push(translatedChunk);
+        } catch (error) {
+            console.error(`翻譯塊 ${i+1} 失敗:`, error);
+            // 出錯時使用原文
+            translatedChunks.push(chunks[i]);
+        }
+    }
+    
+    // 合併翻譯結果
+    return translatedChunks.join("\n\n");
 }
 
 // 翻譯文本到指定語言
