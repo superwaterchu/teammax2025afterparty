@@ -63,36 +63,32 @@ messageForm.addEventListener('submit', async (e) => {
 
 // 翻譯文本
 async function createTranslations(text, sourceLanguage) {
+    // 簡單模擬翻譯，直到GAS CORS問題解決
     const translations = {
-        zh: '',
-        en: '',
-        ja: ''
+        zh: sourceLanguage === 'zh' ? text : `${text}`,
+        en: sourceLanguage === 'en' ? text : `${text}`,
+        ja: sourceLanguage === 'ja' ? text : `${text}`
     };
     
-    // 如果原始語言與目標語言相同，直接使用原文
-    if (sourceLanguage === 'zh') translations.zh = text;
-    if (sourceLanguage === 'en') translations.en = text;
-    if (sourceLanguage === 'ja') translations.ja = text;
-    
-    // 使用Google Apps Script翻譯缺少的語言
-    const langPairs = [];
-    if (!translations.zh) langPairs.push({from: sourceLanguage, to: 'zh-TW', target: 'zh'});
-    if (!translations.en) langPairs.push({from: sourceLanguage, to: 'en', target: 'en'});
-    if (!translations.ja) langPairs.push({from: sourceLanguage, to: 'ja', target: 'ja'});
-    
-    // 進行翻譯
-    try {
-        for (const pair of langPairs) {
-            try {
-                const translatedText = await translateWithGAS(text, pair.from, pair.to);
-                translations[pair.target] = translatedText;
-            } catch (error) {
-                console.error(`翻譯到${pair.to}失敗:`, error);
-                translations[pair.target] = `[無法翻譯] ${text}`;
+    // 嘗試用JSONP方式訪問翻譯API
+    // 注意：此功能可能不會生效，這只是嘗試
+    if (sourceLanguage !== 'zh' && window.googleTranslateCallback === undefined) {
+        window.googleTranslateCallback = function(data) {
+            if (data && data.text) {
+                const translatedElement = document.querySelector('.latest-message .translation-content');
+                if (translatedElement) {
+                    translatedElement.textContent = data.text;
+                }
             }
+        };
+        
+        try {
+            const script = document.createElement('script');
+            script.src = `https://script.google.com/macros/s/AKfycbxTxIl2Us_Xu9ReB8xOvpGPuFxIvKspIXcOxBPmH4Wru5RZAPvoK4ZxvLdvEEZ8QV9B-A/exec?text=${encodeURIComponent(text)}&source=${sourceLanguage}&target=zh-TW&callback=googleTranslateCallback`;
+            document.body.appendChild(script);
+        } catch (e) {
+            console.error('翻譯嘗試失敗', e);
         }
-    } catch (error) {
-        console.error('翻譯過程出錯:', error);
     }
     
     return translations;
@@ -101,7 +97,7 @@ async function createTranslations(text, sourceLanguage) {
 // 使用Google Apps Script進行翻譯
 async function translateWithGAS(text, fromLang, toLang) {
     // 您的GAS部署URL
-    const gasUrl = 'https://script.google.com/macros/s/AKfycbxTxIl2Us_Xu9ReB8xOvpGPuFxIvKspIXcOxBPmH4Wru5RZAPvoK4ZxvLdvEEZ8QV9B-A/exec';
+    const gasUrl = 'https://script.google.com/macros/s/AKfycbyufCyQbvEkUgvm-uks6_E0jmQcwkwNnKQ89P_8ZS36zopsLtUEwfZBUv_y2S9n42vX_Q/exec';
     
     // 執行最多三次嘗試，處理潛在的超時問題
     for (let attempt = 0; attempt < 3; attempt++) {
