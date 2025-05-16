@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>龍舟慶功宴感言牆</title>
+    <title>Team Max 2025: Your Say</title>
     <link rel="stylesheet" href="styles.css">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -11,26 +11,27 @@
 <body>
     <div class="container">
         <header>
-            <h1>龍舟慶功宴感言牆</h1>
-            <p>分享您的龍舟比賽感言，自動多語言翻譯（支持任何語言混合輸入）</p>
+            <h1>Team Max 2025: Your Say</h1>
+            <p>分享你的感言，自動多語言翻譯</p>
+            <p>Share Your Thoughts. Auto-Translate Enabled</p>
         </header>
 
         <section class="input-section">
             <form id="message-form">
                 <div class="form-group">
-                    <label for="name">您的名字</label>
-                    <input type="text" id="name" required placeholder="請輸入您的名字">
+                    <label for="name">Name</label>
+                    <input type="text" id="name" required placeholder="Type your name">
                 </div>
                 <div class="form-group">
-                    <label for="message">感言內容</label>
-                    <textarea id="message" required placeholder="請分享您的感想...（可使用任何語言或混合多種語言）"></textarea>
+                    <label for="message">Message</label>
+                    <textarea id="message" required placeholder="I wanna say...(Any language input supported)"></textarea>
                 </div>
-                <button type="submit" class="submit-btn">發佈感言</button>
+                <button type="submit" class="submit-btn">Send</button>
             </form>
         </section>
 
         <section class="messages-container">
-            <h2>所有感言</h2>
+            <h2>All Message</h2>
             <div class="message-cards" id="message-cards">
                 <!-- 感言卡片將由JavaScript動態生成 -->
                 <div class="loader" id="loader">載入中...</div>
