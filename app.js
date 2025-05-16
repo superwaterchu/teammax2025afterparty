@@ -116,30 +116,22 @@ async function translateToAllLanguages(text) {
 // 偵測語言
 async function detectLanguage(text) {
     try {
-        // 通過嘗試翻譯成英文來偵測語言
-        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=auto|en`;
-        const response = await fetch(url);
-        
-        if (!response.ok) throw new Error(`API回應錯誤: ${response.status}`);
-        
-        const data = await response.json();
-        
-        if (data.responseData && data.responseData.detectedLanguage) {
-            return data.responseData.detectedLanguage;
-        }
-        
-        return 'unknown';
+        return await detectLanguageCode(text);
     } catch (error) {
         console.error('語言偵測錯誤:', error);
-        return 'unknown';
+        return 'en';
     }
 }
 
 // 翻譯文本到指定語言
 async function translateText(text, targetLang) {
     try {
-        // 使用MyMemory API，自動偵測源語言
-        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=auto|${targetLang}`;
+        // 首先進行語言偵測
+        const detectedLang = await detectLanguageCode(text);
+        console.log(`偵測到語言: ${detectedLang}`);
+        
+        // 使用偵測到的語言作為源語言
+        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${detectedLang}|${targetLang}`;
         
         const response = await fetch(url);
         if (!response.ok) throw new Error(`API回應錯誤: ${response.status}`);
@@ -147,6 +139,10 @@ async function translateText(text, targetLang) {
         const data = await response.json();
         
         if (data.responseData && data.responseData.translatedText) {
+            // 檢查是否返回了錯誤信息
+            if (data.responseData.translatedText.includes('INVALID SOURCE LANGUAGE')) {
+                throw new Error('無效的源語言');
+            }
             return data.responseData.translatedText;
         } else {
             throw new Error('翻譯API未返回預期的數據結構');
@@ -154,6 +150,26 @@ async function translateText(text, targetLang) {
     } catch (error) {
         console.error(`翻譯到${targetLang}失敗:`, error);
         throw error;
+    }
+}
+
+// 偵測語言並返回ISO代碼
+async function detectLanguageCode(text) {
+    try {
+        // 簡單語言偵測邏輯
+        const chinesePattern = /[\u4e00-\u9fa5]/;
+        const japanesePattern = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/;
+        const englishPattern = /^[a-zA-Z0-9\s\.,!?'":;-]+$/;
+        
+        if (chinesePattern.test(text)) return "zh-TW";
+        if (japanesePattern.test(text) && !chinesePattern.test(text)) return "ja";
+        if (englishPattern.test(text)) return "en";
+        
+        // 默認使用英文
+        return "en";
+    } catch (error) {
+        console.error('語言偵測錯誤:', error);
+        return "en"; // 默認英文
     }
 }
 
