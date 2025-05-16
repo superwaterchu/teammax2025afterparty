@@ -34,8 +34,8 @@ messageForm.addEventListener('submit', async (e) => {
     if (!name || !message) return;
     
     try {
-        // 模擬翻譯文本
-        const translations = createTranslations(message, language);
+        // 等待翻譯完成
+        const translations = await createTranslations(message, language);
         
         // 創建新消息
         const newMessage = {
@@ -63,6 +63,8 @@ messageForm.addEventListener('submit', async (e) => {
 
 // 翻譯文本
 async function createTranslations(text, sourceLanguage) {
+    console.log('開始翻譯文本:', text, '源語言:', sourceLanguage);
+    
     const translations = {
         zh: '',
         en: '',
@@ -74,6 +76,8 @@ async function createTranslations(text, sourceLanguage) {
     if (sourceLanguage === 'en') translations.en = text;
     if (sourceLanguage === 'ja') translations.ja = text;
     
+    console.log('初始翻譯狀態:', JSON.stringify(translations));
+    
     // 使用MyMemory API翻譯缺少的語言
     const langPairs = [];
     if (!translations.zh) langPairs.push({from: sourceLanguage, to: 'zh-TW', target: 'zh'});
@@ -84,7 +88,9 @@ async function createTranslations(text, sourceLanguage) {
     try {
         for (const pair of langPairs) {
             try {
+                console.log(`嘗試翻譯 ${pair.from} -> ${pair.to}`);
                 const translatedText = await translateWithMyMemory(text, pair.from, pair.to);
+                console.log(`翻譯成功: ${translatedText}`);
                 translations[pair.target] = translatedText;
             } catch (error) {
                 console.error(`翻譯到${pair.to}失敗:`, error);
@@ -95,21 +101,17 @@ async function createTranslations(text, sourceLanguage) {
         console.error('翻譯過程出錯:', error);
     }
     
+    console.log('最終翻譯結果:', JSON.stringify(translations));
     return translations;
 }
 
-// 使用MyMemory API翻譯
+// 使用MyMemory API翻譯 (獨立函數)
 async function translateWithMyMemory(text, fromLang, toLang) {
-    // 語言代碼轉換
-    const langMap = {
-        'zh': 'zh-TW',
-        'en': 'en',
-        'ja': 'ja',
-        'auto': 'auto'
-    };
+    // 強制使用自動偵測源語言
+    const from = 'auto';
+    const to = toLang;
     
-    const from = langMap[fromLang] || 'auto';
-    const to = langMap[toLang] || toLang;
+    console.log(`實際翻譯: ${from} -> ${to}, 文本: ${text}`);
     
     // 使用MyMemory API
     const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${from}|${to}`;
@@ -214,14 +216,14 @@ function displayMessage(message) {
             // 將當前標籤設為 active
             tab.classList.add('active');
             // 更新翻譯內容
-            translationContent.textContent = message.translations[lang] || '(翻譯不可用)';
+            translationContent.textContent = message.translations[lang] || message.originalMessage;
         });
         
         tabs.appendChild(tab);
     });
     
     // 設置初始翻譯內容為中文
-    translationContent.textContent = message.translations.zh || '(翻譯不可用)';
+translationContent.textContent = message.translations.zh || message.originalMessage;
     
     // 建立點讚按鈕
     const likeButton = document.createElement('button');
