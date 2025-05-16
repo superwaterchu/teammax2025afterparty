@@ -61,31 +61,85 @@ messageForm.addEventListener('submit', async (e) => {
     }
 });
 
-// 創建翻譯
-function createTranslations(text, sourceLanguage) {
-    const translations = {};
+// 翻譯文本
+async function createTranslations(text, sourceLanguage) {
+    const translations = {
+        zh: '',
+        en: '',
+        ja: ''
+    };
     
-    // 根據源語言創建模擬翻譯
-    if (sourceLanguage === 'zh') {
-        translations.zh = text;
-        translations.en = `[English] ${text}`;
-        translations.ja = `[日本語] ${text}`;
-    } else if (sourceLanguage === 'en') {
-        translations.zh = `[中文] ${text}`;
-        translations.en = text;
-        translations.ja = `[日本語] ${text}`;
-    } else if (sourceLanguage === 'ja') {
-        translations.zh = `[中文] ${text}`;
-        translations.en = `[English] ${text}`;
-        translations.ja = text;
-    } else {
-        // 自動偵測，假設為中文
-        translations.zh = text;
-        translations.en = `[English] ${text}`;
-        translations.ja = `[日本語] ${text}`;
+    // 如果原始語言與目標語言相同，直接使用原文
+    if (sourceLanguage === 'zh') translations.zh = text;
+    if (sourceLanguage === 'en') translations.en = text;
+    if (sourceLanguage === 'ja') translations.ja = text;
+    
+    // 使用Google Apps Script翻譯缺少的語言
+    const langPairs = [];
+    if (!translations.zh) langPairs.push({from: sourceLanguage, to: 'zh-TW', target: 'zh'});
+    if (!translations.en) langPairs.push({from: sourceLanguage, to: 'en', target: 'en'});
+    if (!translations.ja) langPairs.push({from: sourceLanguage, to: 'ja', target: 'ja'});
+    
+    // 進行翻譯
+    try {
+        for (const pair of langPairs) {
+            try {
+                const translatedText = await translateWithGAS(text, pair.from, pair.to);
+                translations[pair.target] = translatedText;
+            } catch (error) {
+                console.error(`翻譯到${pair.to}失敗:`, error);
+                translations[pair.target] = `[無法翻譯] ${text}`;
+            }
+        }
+    } catch (error) {
+        console.error('翻譯過程出錯:', error);
     }
     
     return translations;
+}
+
+// 使用Google Apps Script進行翻譯
+async function translateWithGAS(text, fromLang, toLang) {
+    // 您的GAS部署URL
+    const gasUrl = 'https://script.google.com/macros/s/AKfycbxTxIl2Us_Xu9ReB8xOvpGPuFxIvKspIXcOxBPmH4Wru5RZAPvoK4ZxvLdvEEZ8QV9B-A/exec';
+    
+    // 執行最多三次嘗試，處理潛在的超時問題
+    for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+            // 構建帶有參數的URL
+            const url = `${gasUrl}?text=${encodeURIComponent(text)}&source=${fromLang}&target=${toLang}`;
+            
+            // 發送請求
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'text/plain'
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`API回應錯誤: ${response.status}`);
+            }
+            
+            // 獲取翻譯文本
+            const translatedText = await response.text();
+            
+            // 檢查回應是否包含錯誤訊息
+            if (translatedText.includes('缺少') || translatedText.includes('錯誤')) {
+                throw new Error(`API回應: ${translatedText}`);
+            }
+            
+            return translatedText;
+        } catch (error) {
+            console.error(`翻譯嘗試 ${attempt + 1} 失敗:`, error);
+            
+            // 最後一次嘗試失敗時，拋出錯誤
+            if (attempt === 2) throw error;
+            
+            // 等待一小段時間後重試
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+    }
 }
 
 // 儲存訊息到本地
