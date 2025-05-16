@@ -32,12 +32,11 @@ messageForm.addEventListener('submit', async (e) => {
     if (!name || !message) return;
     
     try {
-        // 臨時消息ID
-        const tempId = Date.now();
+        console.log('嘗試翻譯...');
         
-        // 創建並顯示帶有"翻譯中"提示的臨時消息
+        // 臨時顯示中...
         const tempMessage = {
-            id: tempId,
+            id: Date.now(),
             name: name,
             originalMessage: message,
             translations: {
@@ -56,13 +55,12 @@ messageForm.addEventListener('submit', async (e) => {
         // 重置表單
         messageForm.reset();
         
-        // 後台進行翻譯
-        console.log('開始翻譯...');
+        // 等待翻譯完成
         const translations = await translateToAllLanguages(message);
         console.log('翻譯完成:', translations);
         
         // 更新消息的翻譯內容
-        updateMessageTranslations(tempId, translations);
+        updateMessageTranslations(tempMessage.id, translations);
         
     } catch (error) {
         console.error('提交消息時出錯:', error);
@@ -74,15 +72,15 @@ messageForm.addEventListener('submit', async (e) => {
 async function translateToAllLanguages(text) {
     const translations = {
         original: text,
-        zh: '',
-        en: '',
-        ja: ''
+        zh: text,  // 默認值為原文，以防翻譯失敗
+        en: text,
+        ja: text
     };
     
     try {
-        // 嘗試偵測語言（用英文翻譯結果來推斷）
-        const detectResult = await detectLanguage(text);
-        console.log('偵測語言結果:', detectResult);
+        // 偵測語言
+        const detectedLang = detectLanguageCode(text);
+        console.log('偵測語言結果:', detectedLang);
         
         // 翻譯到三種目標語言
         const zhPromise = translateText(text, 'zh-TW');
@@ -94,82 +92,93 @@ async function translateToAllLanguages(text) {
         
         // 處理結果
         if (results[0].status === 'fulfilled') translations.zh = results[0].value;
-        else translations.zh = text;
-        
         if (results[1].status === 'fulfilled') translations.en = results[1].value;
-        else translations.en = text;
-        
         if (results[2].status === 'fulfilled') translations.ja = results[2].value;
-        else translations.ja = text;
         
     } catch (error) {
         console.error('翻譯過程出錯:', error);
-        // 預設使用原文
-        translations.zh = text;
-        translations.en = text;
-        translations.ja = text;
     }
     
     return translations;
 }
 
-// 偵測語言
-async function detectLanguage(text) {
+// 語言偵測函數
+function detectLanguageCode(text) {
     try {
-        return await detectLanguageCode(text);
+        // 優先檢查 CJK 字符 (包含中文、日文、韓文的統一表意文字)
+        if (/[\u2E80-\u9FFF]/.test(text)) {
+            // 如果包含日文假名，則判定為日文
+            if (/[\u3040-\u30FF]/.test(text)) { // 日文平假名、片假名
+                return "ja";
+            }
+            // 否則，默認為繁體中文 (MyMemory API 支持 zh-TW)
+            return "zh-TW";
+        }
+        // 基礎的英文判斷 (只包含拉丁字母、數字、空格和基礎標點)
+        if (/^[A-Za-z0-9\s\.,!?'"£$€¥%^&*()_+=\-[\]{};:@#~<>/\\]+$/.test(text) && text.length > 0) {
+            return "en";
+        }
+        // 如果以上規則都未匹配，或者文本為空/不符合英文基本模式，則默認為英文
+        console.warn(`無法明確偵測語言，默認為 'en': "${text.substring(0, 50)}..."`);
+        return "en";
     } catch (error) {
-        console.error('語言偵測錯誤:', error);
-        return 'en';
+        console.error('語言偵測錯誤 (detectLanguageCode):', error);
+        return "en"; // 出錯時默認為英文
     }
 }
 
 // 翻譯文本到指定語言
 async function translateText(text, targetLang) {
     try {
-        // 首先進行語言偵測
-        const detectedLang = await detectLanguageCode(text);
-        console.log(`偵測到語言: ${detectedLang}`);
-        
-        // 使用偵測到的語言作為源語言
-        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${detectedLang}|${targetLang}`;
-        
+        const detectedSourceLang = detectLanguageCode(text); // 直接調用同步的偵測函數
+        console.log(`偵測到的源語言: ${detectedSourceLang}, 翻譯目標: ${targetLang}`);
+
+        // 如果源語言與目標語言相同，直接返回原文
+        if (detectedSourceLang === targetLang || 
+            (detectedSourceLang === 'zh-TW' && targetLang === 'zh')) {
+            console.log(`源語言與目標語言相同 (${detectedSourceLang}=${targetLang})，返回原文`);
+            return text;
+        }
+
+        const langPair = `${detectedSourceLang}|${targetLang}`;
+        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langPair}`;
+        console.log('請求 MyMemory API URL:', url);
+
         const response = await fetch(url);
-        if (!response.ok) throw new Error(`API回應錯誤: ${response.status}`);
-        
+        if (!response.ok) {
+            const errorBody = await response.text(); // 嘗試獲取錯誤詳情
+            console.error(`MyMemory API HTTP 錯誤: ${response.status}`, errorBody);
+            throw new Error(`API回應錯誤: ${response.status}`);
+        }
+
         const data = await response.json();
+        console.log('MyMemory API 響應數據:', data);
+
+        // MyMemory API 有時即使 responseStatus 不是 200 也可能包含有用的錯誤信息
+        if (data.responseStatus !== 200 && data.responseDetails) {
+            console.error('MyMemory API 業務錯誤:', data.responseDetails);
+            throw new Error(`翻譯API業務錯誤: ${data.responseDetails}`);
+        }
         
         if (data.responseData && data.responseData.translatedText) {
-            // 檢查是否返回了錯誤信息
-            if (data.responseData.translatedText.includes('INVALID SOURCE LANGUAGE')) {
-                throw new Error('無效的源語言');
+            const translated = data.responseData.translatedText;
+            // 有些情況下，即使成功，API也可能返回包含錯誤信息的字符串
+            if (typeof translated === 'string' && 
+                (translated.toUpperCase().includes("INVALID SOURCE LANGUAGE") || 
+                 translated.toUpperCase().includes("INVALID TARGET LANGUAGE") ||
+                 translated.toUpperCase().includes("INVALID LANGPAIR") ||
+                 translated.toUpperCase().includes("PLEASE SPECIFY TEXT TO TRANSLATE"))) {
+                console.warn(`API返回了錯誤信息: ${translated}`);
+                throw new Error(`翻譯API返回錯誤信息: ${translated}`);
             }
-            return data.responseData.translatedText;
+            return translated;
         } else {
+            console.error('MyMemory API 未返回預期的翻譯數據結構');
             throw new Error('翻譯API未返回預期的數據結構');
         }
     } catch (error) {
-        console.error(`翻譯到${targetLang}失敗:`, error);
-        throw error;
-    }
-}
-
-// 偵測語言並返回ISO代碼
-async function detectLanguageCode(text) {
-    try {
-        // 簡單語言偵測邏輯
-        const chinesePattern = /[\u4e00-\u9fa5]/;
-        const japanesePattern = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff]/;
-        const englishPattern = /^[a-zA-Z0-9\s\.,!?'":;-]+$/;
-        
-        if (chinesePattern.test(text)) return "zh-TW";
-        if (japanesePattern.test(text) && !chinesePattern.test(text)) return "ja";
-        if (englishPattern.test(text)) return "en";
-        
-        // 默認使用英文
-        return "en";
-    } catch (error) {
-        console.error('語言偵測錯誤:', error);
-        return "en"; // 默認英文
+        console.error(`翻譯到 ${targetLang} 失敗:`, error);
+        throw error; // 向上拋出錯誤，由 translateToAllLanguages 函數處理回退
     }
 }
 
@@ -349,4 +358,4 @@ function escapeHTML(text) {
 }
 
 // 在页面加載時輸出調試信息
-console.log('app.js 已加載 - 多語言版本 (v4.0)');
+console.log('app.js 已加載 - 完整多語言版本 (v5.0)');
