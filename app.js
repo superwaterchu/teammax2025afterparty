@@ -63,78 +63,66 @@ messageForm.addEventListener('submit', async (e) => {
 
 // 翻譯文本
 async function createTranslations(text, sourceLanguage) {
-    // 簡單模擬翻譯，直到GAS CORS問題解決
     const translations = {
-        zh: sourceLanguage === 'zh' ? text : `${text}`,
-        en: sourceLanguage === 'en' ? text : `${text}`,
-        ja: sourceLanguage === 'ja' ? text : `${text}`
+        zh: '',
+        en: '',
+        ja: ''
     };
     
-    // 嘗試用JSONP方式訪問翻譯API
-    // 注意：此功能可能不會生效，這只是嘗試
-    if (sourceLanguage !== 'zh' && window.googleTranslateCallback === undefined) {
-        window.googleTranslateCallback = function(data) {
-            if (data && data.text) {
-                const translatedElement = document.querySelector('.latest-message .translation-content');
-                if (translatedElement) {
-                    translatedElement.textContent = data.text;
-                }
+    // 如果原始語言與目標語言相同，直接使用原文
+    if (sourceLanguage === 'zh') translations.zh = text;
+    if (sourceLanguage === 'en') translations.en = text;
+    if (sourceLanguage === 'ja') translations.ja = text;
+    
+    // 使用MyMemory API翻譯缺少的語言
+    const langPairs = [];
+    if (!translations.zh) langPairs.push({from: sourceLanguage, to: 'zh-TW', target: 'zh'});
+    if (!translations.en) langPairs.push({from: sourceLanguage, to: 'en', target: 'en'});
+    if (!translations.ja) langPairs.push({from: sourceLanguage, to: 'ja', target: 'ja'});
+    
+    // 進行翻譯
+    try {
+        for (const pair of langPairs) {
+            try {
+                const translatedText = await translateWithMyMemory(text, pair.from, pair.to);
+                translations[pair.target] = translatedText;
+            } catch (error) {
+                console.error(`翻譯到${pair.to}失敗:`, error);
+                translations[pair.target] = text; // 失敗時使用原文
             }
-        };
-        
-        try {
-            const script = document.createElement('script');
-            script.src = `https://script.google.com/macros/s/AKfycbxTxIl2Us_Xu9ReB8xOvpGPuFxIvKspIXcOxBPmH4Wru5RZAPvoK4ZxvLdvEEZ8QV9B-A/exec?text=${encodeURIComponent(text)}&source=${sourceLanguage}&target=zh-TW&callback=googleTranslateCallback`;
-            document.body.appendChild(script);
-        } catch (e) {
-            console.error('翻譯嘗試失敗', e);
         }
+    } catch (error) {
+        console.error('翻譯過程出錯:', error);
     }
     
     return translations;
 }
 
-// 使用Google Apps Script進行翻譯
-async function translateWithGAS(text, fromLang, toLang) {
-    // 您的GAS部署URL
-    const gasUrl = 'https://script.google.com/macros/s/AKfycbyufCyQbvEkUgvm-uks6_E0jmQcwkwNnKQ89P_8ZS36zopsLtUEwfZBUv_y2S9n42vX_Q/exec';
+// 使用MyMemory API翻譯
+async function translateWithMyMemory(text, fromLang, toLang) {
+    // 語言代碼轉換
+    const langMap = {
+        'zh': 'zh-TW',
+        'en': 'en',
+        'ja': 'ja',
+        'auto': 'auto'
+    };
     
-    // 執行最多三次嘗試，處理潛在的超時問題
-    for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-            // 構建帶有參數的URL
-            const url = `${gasUrl}?text=${encodeURIComponent(text)}&source=${fromLang}&target=${toLang}`;
-            
-            // 發送請求
-            const response = await fetch(url, {
-                method: 'GET',
-                headers: {
-                    'Accept': 'text/plain'
-                }
-            });
-            
-            if (!response.ok) {
-                throw new Error(`API回應錯誤: ${response.status}`);
-            }
-            
-            // 獲取翻譯文本
-            const translatedText = await response.text();
-            
-            // 檢查回應是否包含錯誤訊息
-            if (translatedText.includes('缺少') || translatedText.includes('錯誤')) {
-                throw new Error(`API回應: ${translatedText}`);
-            }
-            
-            return translatedText;
-        } catch (error) {
-            console.error(`翻譯嘗試 ${attempt + 1} 失敗:`, error);
-            
-            // 最後一次嘗試失敗時，拋出錯誤
-            if (attempt === 2) throw error;
-            
-            // 等待一小段時間後重試
-            await new Promise(resolve => setTimeout(resolve, 1000));
-        }
+    const from = langMap[fromLang] || 'auto';
+    const to = langMap[toLang] || toLang;
+    
+    // 使用MyMemory API
+    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${from}|${to}`;
+    
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`API回應錯誤: ${response.status}`);
+    
+    const data = await response.json();
+    
+    if (data.responseData) {
+        return data.responseData.translatedText;
+    } else {
+        throw new Error(data.responseMessage || '翻譯失敗');
     }
 }
 
