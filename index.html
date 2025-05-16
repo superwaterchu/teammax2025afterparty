@@ -12,7 +12,7 @@
     <div class="container">
         <header>
             <h1>龍舟慶功宴感言牆</h1>
-            <p>分享您的龍舟比賽感言，自動翻譯成中、英、日三種語言</p>
+            <p>分享您的龍舟比賽感言，自動多語言翻譯（支持任何語言混合輸入）</p>
         </header>
 
         <section class="input-section">
@@ -23,16 +23,7 @@
                 </div>
                 <div class="form-group">
                     <label for="message">感言內容</label>
-                    <textarea id="message" required placeholder="請分享您的感想..."></textarea>
-                </div>
-                <div class="form-group">
-                    <label for="language">原始語言</label>
-                    <select id="language">
-                        <option value="zh">中文</option>
-                        <option value="en">English</option>
-                        <option value="ja">日本語</option>
-                        <option value="auto">自動偵測</option>
-                    </select>
+                    <textarea id="message" required placeholder="請分享您的感想...（可使用任何語言或混合多種語言）"></textarea>
                 </div>
                 <button type="submit" class="submit-btn">發佈感言</button>
             </form>
@@ -46,9 +37,8 @@
             </div>
         </section>
     </div>
-
     
     <!-- 我們的應用程式邏輯 -->
     <script src="app.js"></script>
 </body>
-</html> 
+</html>
