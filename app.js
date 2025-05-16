@@ -2,7 +2,6 @@
 const messageForm = document.getElementById('message-form');
 const nameInput = document.getElementById('name');
 const messageInput = document.getElementById('message');
-const languageSelect = document.getElementById('language');
 const messageCards = document.getElementById('message-cards');
 const loader = document.getElementById('loader');
 
@@ -25,112 +24,170 @@ document.addEventListener('DOMContentLoaded', () => {
 // 提交表單
 messageForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    console.log('表單提交');
+    console.log('表單提交開始');
     
     const name = nameInput.value.trim();
     const message = messageInput.value.trim();
-    const language = languageSelect.value;
     
     if (!name || !message) return;
     
     try {
-        // 等待翻譯完成
-        const translations = await createTranslations(message, language);
+        // 臨時消息ID
+        const tempId = Date.now();
         
-        // 創建新消息
-        const newMessage = {
-            id: Date.now(), // 使用時間戳作為ID
+        // 創建並顯示帶有"翻譯中"提示的臨時消息
+        const tempMessage = {
+            id: tempId,
             name: name,
             originalMessage: message,
-            originalLanguage: language,
-            translations: translations,
+            translations: {
+                original: message,
+                zh: '翻譯中...',
+                en: '翻譯中...',
+                ja: '翻譯中...'
+            },
             timestamp: Date.now(),
             likes: 0
         };
         
-        // 保存消息
-        saveMessage(newMessage);
+        // 立即顯示臨時消息
+        saveMessage(tempMessage);
         
         // 重置表單
         messageForm.reset();
         
-        console.log('消息已保存', newMessage);
+        // 後台進行翻譯
+        console.log('開始翻譯...');
+        const translations = await translateToAllLanguages(message);
+        console.log('翻譯完成:', translations);
+        
+        // 更新消息的翻譯內容
+        updateMessageTranslations(tempId, translations);
+        
     } catch (error) {
         console.error('提交消息時出錯:', error);
         alert('發送感言時發生錯誤，請稍後再試。');
     }
 });
 
-// 翻譯文本
-async function createTranslations(text, sourceLanguage) {
-    console.log('開始翻譯文本:', text, '源語言:', sourceLanguage);
-    
+// 翻譯到所有目標語言
+async function translateToAllLanguages(text) {
     const translations = {
+        original: text,
         zh: '',
         en: '',
         ja: ''
     };
     
-    // 如果原始語言與目標語言相同，直接使用原文
-    if (sourceLanguage === 'zh') translations.zh = text;
-    if (sourceLanguage === 'en') translations.en = text;
-    if (sourceLanguage === 'ja') translations.ja = text;
-    
-    console.log('初始翻譯狀態:', JSON.stringify(translations));
-    
-    // 使用MyMemory API翻譯缺少的語言
-    const langPairs = [];
-    if (!translations.zh) langPairs.push({from: sourceLanguage, to: 'zh-TW', target: 'zh'});
-    if (!translations.en) langPairs.push({from: sourceLanguage, to: 'en', target: 'en'});
-    if (!translations.ja) langPairs.push({from: sourceLanguage, to: 'ja', target: 'ja'});
-    
-    // 進行翻譯
     try {
-        for (const pair of langPairs) {
-            try {
-                console.log(`嘗試翻譯 ${pair.from} -> ${pair.to}`);
-                const translatedText = await translateWithMyMemory(text, pair.from, pair.to);
-                console.log(`翻譯成功: ${translatedText}`);
-                translations[pair.target] = translatedText;
-            } catch (error) {
-                console.error(`翻譯到${pair.to}失敗:`, error);
-                translations[pair.target] = text; // 失敗時使用原文
-            }
-        }
+        // 嘗試偵測語言（用英文翻譯結果來推斷）
+        const detectResult = await detectLanguage(text);
+        console.log('偵測語言結果:', detectResult);
+        
+        // 翻譯到三種目標語言
+        const zhPromise = translateText(text, 'zh-TW');
+        const enPromise = translateText(text, 'en');
+        const jaPromise = translateText(text, 'ja');
+        
+        // 並行處理所有翻譯請求
+        const results = await Promise.allSettled([zhPromise, enPromise, jaPromise]);
+        
+        // 處理結果
+        if (results[0].status === 'fulfilled') translations.zh = results[0].value;
+        else translations.zh = text;
+        
+        if (results[1].status === 'fulfilled') translations.en = results[1].value;
+        else translations.en = text;
+        
+        if (results[2].status === 'fulfilled') translations.ja = results[2].value;
+        else translations.ja = text;
+        
     } catch (error) {
         console.error('翻譯過程出錯:', error);
+        // 預設使用原文
+        translations.zh = text;
+        translations.en = text;
+        translations.ja = text;
     }
     
-    console.log('最終翻譯結果:', JSON.stringify(translations));
     return translations;
 }
 
-// 使用MyMemory API翻譯 (獨立函數)
-async function translateWithMyMemory(text, fromLang, toLang) {
-    // 強制使用自動偵測源語言
-    const from = 'auto';
-    const to = toLang;
-    
-    console.log(`實際翻譯: ${from} -> ${to}, 文本: ${text}`);
-    
-    // 使用MyMemory API
-    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${from}|${to}`;
-    
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`API回應錯誤: ${response.status}`);
-    
-    const data = await response.json();
-    
-    if (data.responseData) {
-        return data.responseData.translatedText;
-    } else {
-        throw new Error(data.responseMessage || '翻譯失敗');
+// 偵測語言
+async function detectLanguage(text) {
+    try {
+        // 通過嘗試翻譯成英文來偵測語言
+        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=auto|en`;
+        const response = await fetch(url);
+        
+        if (!response.ok) throw new Error(`API回應錯誤: ${response.status}`);
+        
+        const data = await response.json();
+        
+        if (data.responseData && data.responseData.detectedLanguage) {
+            return data.responseData.detectedLanguage;
+        }
+        
+        return 'unknown';
+    } catch (error) {
+        console.error('語言偵測錯誤:', error);
+        return 'unknown';
+    }
+}
+
+// 翻譯文本到指定語言
+async function translateText(text, targetLang) {
+    try {
+        // 使用MyMemory API，自動偵測源語言
+        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=auto|${targetLang}`;
+        
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`API回應錯誤: ${response.status}`);
+        
+        const data = await response.json();
+        
+        if (data.responseData && data.responseData.translatedText) {
+            return data.responseData.translatedText;
+        } else {
+            throw new Error('翻譯API未返回預期的數據結構');
+        }
+    } catch (error) {
+        console.error(`翻譯到${targetLang}失敗:`, error);
+        throw error;
+    }
+}
+
+// 更新消息的翻譯
+function updateMessageTranslations(messageId, translations) {
+    // 找到並更新消息
+    const messageIndex = localMessages.findIndex(m => m.id === messageId);
+    if (messageIndex !== -1) {
+        localMessages[messageIndex].translations = translations;
+        
+        // 更新本地存儲
+        localStorage.setItem('dragonBoatMessages', JSON.stringify(localMessages));
+        
+        // 更新UI
+        const msgElement = document.getElementById(`message-${messageId}`);
+        if (msgElement) {
+            const contentElement = msgElement.querySelector('.translation-content');
+            if (contentElement) {
+                // 根據當前顯示的標籤更新內容
+                const activeTab = msgElement.querySelector('.tab.active');
+                if (activeTab) {
+                    const lang = activeTab.dataset.language;
+                    contentElement.textContent = translations[lang] || translations.original;
+                }
+            }
+        }
+        
+        console.log('消息翻譯已更新', messageId);
     }
 }
 
 // 儲存訊息到本地
 function saveMessage(message) {
-    // 添加到消息數組
+    // 添加到消息數組最前面
     localMessages.unshift(message);
     
     // 保存到本地存儲
@@ -170,7 +227,7 @@ function loadMessages() {
 
 // 顯示訊息卡片
 function displayMessage(message) {
-    console.log('顯示消息', message.id);
+    console.log('顯示消息', message.id, message);
     
     const card = document.createElement('div');
     card.className = 'message-card';
@@ -194,6 +251,7 @@ function displayMessage(message) {
     tabs.className = 'translation-tabs';
     
     const languageLabels = {
+        'original': '原文',
         'zh': '中文',
         'en': '英文',
         'ja': '日文'
@@ -206,7 +264,7 @@ function displayMessage(message) {
     // 建立翻譯標籤
     Object.keys(languageLabels).forEach((lang, index) => {
         const tab = document.createElement('div');
-        tab.className = `tab ${index === 0 ? 'active' : ''}`;
+        tab.className = `tab ${index === 0 ? 'active' : ''} ${lang === 'original' ? 'original' : ''}`;
         tab.textContent = languageLabels[lang];
         tab.dataset.language = lang;
         
@@ -215,15 +273,15 @@ function displayMessage(message) {
             tabs.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             // 將當前標籤設為 active
             tab.classList.add('active');
-            // 更新翻譯內容
+            // 更新翻譯內容 - 始終顯示某些內容
             translationContent.textContent = message.translations[lang] || message.originalMessage;
         });
         
         tabs.appendChild(tab);
     });
     
-    // 設置初始翻譯內容為中文
-translationContent.textContent = message.translations.zh || message.originalMessage;
+    // 設置初始翻譯內容為原文
+    translationContent.textContent = message.translations.original || message.originalMessage;
     
     // 建立點讚按鈕
     const likeButton = document.createElement('button');
@@ -275,4 +333,4 @@ function escapeHTML(text) {
 }
 
 // 在页面加載時輸出調試信息
-console.log('app.js 已加載 - 使用本地存儲版本 (v2)');
+console.log('app.js 已加載 - 多語言版本 (v4.0)');
