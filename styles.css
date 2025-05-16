@@ -158,10 +158,12 @@ textarea {
     color: var(--original-color);
 }
 
+/* 找到 .translation-content 樣式，添加以下屬性 */
 .translation-content {
     margin-bottom: 1rem;
     min-height: 80px;
     line-height: 1.5;
+    white-space: pre-wrap; /* 添加這一行，保留換行符 */
 }
 
 .like-button {
