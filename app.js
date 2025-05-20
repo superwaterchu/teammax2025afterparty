@@ -1,3 +1,8 @@
+// === Firebase Database 參考 ===
+import { getDatabase, ref, push, onValue, update, runTransaction } from "https://www.gstatic.com/firebasejs/11.7.3/firebase-database.js";
+const database = getDatabase();
+const messagesRef = ref(database, 'messages'); // Base reference to the 'messages' path
+
 // DOM 元素
 const messageForm = document.getElementById('message-form');
 const nameInput = document.getElementById('name');
@@ -6,8 +11,7 @@ const messageCards = document.getElementById('message-cards');
 const loader = document.getElementById('loader');
 
 // 本地存儲消息陣列
-let localMessages = [];
-let messageId = 0;
+let localMessages = []; // 僅作為快取用，實際資料來自 Firebase
 
 // 初始化頁面
 document.addEventListener('DOMContentLoaded', () => {
@@ -16,27 +20,41 @@ document.addEventListener('DOMContentLoaded', () => {
     if (loader) {
         loader.style.display = 'none';
     }
-    
+
     // 載入已儲存的訊息
     loadMessages();
 });
+
+// 監聽 Firebase 資料庫留言
+function loadMessages() {
+    console.log('從 Firebase 載入留言...');
+    // onValue listens to changes at the 'messages' path
+    onValue(messagesRef, (snapshot) => {
+        const data = snapshot.val();
+        localMessages = [];
+        messageCards.innerHTML = '';
+        if (data) {
+            // 轉換為陣列並依時間排序（新到舊）
+            const arr = Object.entries(data).map(([id, msg]) => ({ ...msg, id }));
+            arr.sort((a, b) => b.timestamp - a.timestamp);
+            arr.forEach(msg => displayMessage(msg));
+            localMessages = arr;
+        }
+        if (loader) loader.style.display = 'none';
+    });
+}
 
 // 提交表單
 messageForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     console.log('表單提交開始');
-    
     const name = nameInput.value.trim();
     const message = messageInput.value.trim();
-    
     if (!name || !message) return;
-    
     try {
         console.log('嘗試翻譯...');
-        
-        // 臨時顯示中...
+        // 先顯示「翻譯中」
         const tempMessage = {
-            id: Date.now(),
             name: name,
             originalMessage: message,
             translations: {
@@ -48,20 +66,16 @@ messageForm.addEventListener('submit', async (e) => {
             timestamp: Date.now(),
             likes: 0
         };
-        
-        // 立即顯示臨時消息
-        saveMessage(tempMessage);
-        
+        // 寫入 Firebase，取得新留言的 key
+        // push adds a new child to the 'messages' path
+        const newMsgRef = await push(messagesRef, tempMessage);
         // 重置表單
         messageForm.reset();
-        
-        // 等待翻譯完成
+        // 翻譯
         const translations = await translateToAllLanguages(message);
-        console.log('翻譯完成:', translations);
-        
-        // 更新消息的翻譯內容
-        updateMessageTranslations(tempMessage.id, translations);
-        
+        // 更新該留言的翻譯內容
+        // update targets a specific message within the 'messages' path
+        await update(ref(database, `messages/${newMsgRef.key}`), { translations });
     } catch (error) {
         console.error('提交消息時出錯:', error);
         alert('發送感言時發生錯誤，請稍後再試。');
@@ -76,7 +90,7 @@ async function translateToAllLanguages(text) {
         en: text,
         ja: text
     };
-    
+
     try {
         // 偵測語言
         const detectedLang = detectLanguageCode(text);
@@ -86,19 +100,19 @@ async function translateToAllLanguages(text) {
         const zhPromise = translateLongText(text, 'zh-TW');
         const enPromise = translateLongText(text, 'en');
         const jaPromise = translateLongText(text, 'ja');
-        
+
         // 並行處理所有翻譯請求
         const results = await Promise.allSettled([zhPromise, enPromise, jaPromise]);
-        
+
         // 處理結果
         if (results[0].status === 'fulfilled') translations.zh = results[0].value;
         if (results[1].status === 'fulfilled') translations.en = results[1].value;
         if (results[2].status === 'fulfilled') translations.ja = results[2].value;
-        
+
     } catch (error) {
         console.error('翻譯過程出錯:', error);
     }
-    
+
     return translations;
 }
 
@@ -131,10 +145,10 @@ function detectLanguageCode(text) {
 function splitTextForTranslation(text) {
     // 如果文本較短，直接返回
     if (text.length < 1000) return [text];
-    
+
     // 按段落分割
     let paragraphs = text.split(/\n\s*\n/);
-    
+
     // 如果段落仍然太長，按句子分割
     let chunks = [];
     for (let para of paragraphs) {
@@ -144,7 +158,7 @@ function splitTextForTranslation(text) {
             // 按句號、問號、感嘆號等分割
             let sentences = para.split(/(?<=[.!?])\s+/);
             let currentChunk = "";
-            
+
             for (let sentence of sentences) {
                 if ((currentChunk + sentence).length < 950) {
                     currentChunk += (currentChunk ? " " : "") + sentence;
@@ -153,11 +167,11 @@ function splitTextForTranslation(text) {
                     currentChunk = sentence;
                 }
             }
-            
+
             if (currentChunk) chunks.push(currentChunk);
         }
     }
-    
+
     return chunks.length > 0 ? chunks : [text];
 }
 
@@ -166,12 +180,12 @@ async function translateLongText(text, targetLang) {
     // 分割文本
     const chunks = splitTextForTranslation(text);
     console.log(`將長文本分為 ${chunks.length} 個塊進行翻譯`);
-    
+
     // 如果只有一個塊，直接翻譯
     if (chunks.length === 1) {
         return await translateText(text, targetLang);
     }
-    
+
     // 翻譯每個塊
     let translatedChunks = [];
     for (let i = 0; i < chunks.length; i++) {
@@ -185,7 +199,7 @@ async function translateLongText(text, targetLang) {
             translatedChunks.push(chunks[i]);
         }
     }
-    
+
     // 合併翻譯結果
     return translatedChunks.join("\n\n");
 }
@@ -197,7 +211,7 @@ async function translateText(text, targetLang) {
         console.log(`偵測到的源語言: ${detectedSourceLang}, 翻譯目標: ${targetLang}`);
 
         // 如果源語言與目標語言相同，直接返回原文
-        if (detectedSourceLang === targetLang || 
+        if (detectedSourceLang === targetLang ||
             (detectedSourceLang === 'zh-TW' && targetLang === 'zh')) {
             console.log(`源語言與目標語言相同 (${detectedSourceLang}=${targetLang})，返回原文`);
             return text;
@@ -222,12 +236,12 @@ async function translateText(text, targetLang) {
             console.error('MyMemory API 業務錯誤:', data.responseDetails);
             throw new Error(`翻譯API業務錯誤: ${data.responseDetails}`);
         }
-        
+
         if (data.responseData && data.responseData.translatedText) {
             const translated = data.responseData.translatedText;
             // 有些情況下，即使成功，API也可能返回包含錯誤信息的字符串
-            if (typeof translated === 'string' && 
-                (translated.toUpperCase().includes("INVALID SOURCE LANGUAGE") || 
+            if (typeof translated === 'string' &&
+                (translated.toUpperCase().includes("INVALID SOURCE LANGUAGE") ||
                  translated.toUpperCase().includes("INVALID TARGET LANGUAGE") ||
                  translated.toUpperCase().includes("INVALID LANGPAIR") ||
                  translated.toUpperCase().includes("PLEASE SPECIFY TEXT TO TRANSLATE"))) {
@@ -245,87 +259,19 @@ async function translateText(text, targetLang) {
     }
 }
 
-// 更新消息的翻譯
-function updateMessageTranslations(messageId, translations) {
-    // 找到並更新消息
-    const messageIndex = localMessages.findIndex(m => m.id === messageId);
-    if (messageIndex !== -1) {
-        localMessages[messageIndex].translations = translations;
-        
-        // 更新本地存儲
-        localStorage.setItem('dragonBoatMessages', JSON.stringify(localMessages));
-        
-        // 更新UI
-        const msgElement = document.getElementById(`message-${messageId}`);
-        if (msgElement) {
-            const contentElement = msgElement.querySelector('.translation-content');
-            if (contentElement) {
-                // 根據當前顯示的標籤更新內容
-                const activeTab = msgElement.querySelector('.tab.active');
-                if (activeTab) {
-                    const lang = activeTab.dataset.language;
-                    contentElement.textContent = translations[lang] || translations.original;
-                }
-            }
-        }
-        
-        console.log('消息翻譯已更新', messageId);
-    }
-}
-
-// 儲存訊息到本地
-function saveMessage(message) {
-    // 添加到消息數組最前面
-    localMessages.unshift(message);
-    
-    // 保存到本地存儲
-    localStorage.setItem('dragonBoatMessages', JSON.stringify(localMessages));
-    
-    // 顯示消息
-    displayMessage(message);
-    
-    console.log('保存了新消息', message);
-}
-
-// 載入訊息
-function loadMessages() {
-    console.log('嘗試載入已保存的消息');
-    const saved = localStorage.getItem('dragonBoatMessages');
-    
-    if (saved) {
-        try {
-            localMessages = JSON.parse(saved);
-            console.log('成功載入消息', localMessages.length);
-            
-            // 顯示所有消息
-            messageCards.innerHTML = '';
-            localMessages.forEach(message => {
-                displayMessage(message);
-            });
-        } catch (e) {
-            console.error('解析已保存消息時出錯:', e);
-            localStorage.removeItem('dragonBoatMessages');
-            localMessages = [];
-        }
-    } else {
-        console.log('沒有發現已保存的消息');
-        localMessages = [];
-    }
-}
-
 // 顯示訊息卡片
 function displayMessage(message) {
     console.log('顯示消息', message.id, message);
-    
+
     const card = document.createElement('div');
     card.className = 'message-card';
     card.id = `message-${message.id}`;
-    
+
     // 格式化時間
     const timestamp = new Date(message.timestamp);
     const formattedDate = timestamp.toLocaleDateString('zh-TW');
     const formattedTime = timestamp.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
-    
+
     // 建立卡片頭部
     const cardHeader = document.createElement('div');
     cardHeader.className = 'card-header';
@@ -333,29 +279,29 @@ function displayMessage(message) {
         <div class="card-author">${escapeHTML(message.name)}</div>
         <div class="card-timestamp">${formattedDate} ${formattedTime}</div>
     `;
-    
+
     // 建立翻譯標籤
     const tabs = document.createElement('div');
     tabs.className = 'translation-tabs';
-    
+
     const languageLabels = {
         'original': '原文',
         'zh': '中文',
         'en': '英文',
         'ja': '日文'
     };
-    
+
     // 用於儲存翻譯內容的元素
     const translationContent = document.createElement('div');
     translationContent.className = 'translation-content';
-    
+
     // 建立翻譯標籤
     Object.keys(languageLabels).forEach((lang, index) => {
         const tab = document.createElement('div');
         tab.className = `tab ${index === 0 ? 'active' : ''} ${lang === 'original' ? 'original' : ''}`;
         tab.textContent = languageLabels[lang];
         tab.dataset.language = lang;
-        
+
         tab.addEventListener('click', () => {
             // 移除所有標籤的 active 類
             tabs.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -364,53 +310,41 @@ function displayMessage(message) {
             // 更新翻譯內容 - 始終顯示某些內容
             translationContent.textContent = message.translations[lang] || message.originalMessage;
         });
-        
+
         tabs.appendChild(tab);
     });
-    
+
     // 設置初始翻譯內容為原文
     translationContent.textContent = message.translations.original || message.originalMessage;
-    
+
     // 建立點讚按鈕
     const likeButton = document.createElement('button');
     likeButton.className = 'like-button';
     likeButton.innerHTML = `<i class="fas fa-heart"></i> <span class="like-count">${message.likes || 0}</span>`;
-    
+
     likeButton.addEventListener('click', () => {
         if (!likeButton.classList.contains('liked')) {
             incrementLikes(message.id);
             likeButton.classList.add('liked');
         }
     });
-    
+
     // 組合所有元素
     card.appendChild(cardHeader);
     card.appendChild(tabs);
     card.appendChild(translationContent);
     card.appendChild(likeButton);
-    
+
     messageCards.appendChild(card);
 }
 
-// 增加點讚數
+// 點讚功能
 function incrementLikes(messageId) {
-    console.log('點讚', messageId);
-    
-    const messageIndex = localMessages.findIndex(m => m.id === messageId);
-    if (messageIndex !== -1) {
-        localMessages[messageIndex].likes = (localMessages[messageIndex].likes || 0) + 1;
-        
-        // 更新顯示
-        const likeCountElement = document.querySelector(`#message-${messageId} .like-count`);
-        if (likeCountElement) {
-            likeCountElement.textContent = localMessages[messageIndex].likes;
-        }
-        
-        // 儲存到本地儲存
-        localStorage.setItem('dragonBoatMessages', JSON.stringify(localMessages));
-        
-        console.log('更新點讚數', localMessages[messageIndex].likes);
-    }
+    // runTransaction targets the 'likes' property of a specific message within the 'messages' path
+    const msgRef = ref(database, `messages/${messageId}/likes`);
+    runTransaction(msgRef, (currentLikes) => {
+        return (currentLikes || 0) + 1;
+    });
 }
 
 // 防止 XSS 攻擊的 HTML 字符轉義
@@ -421,4 +355,4 @@ function escapeHTML(text) {
 }
 
 // 在页面加載時輸出調試信息
-console.log('app.js 已加載 - 完整多語言版本 (v5.0)');
+console.log('app.js 已加載 - Firebase 多語言即時同步版本');
