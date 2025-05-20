@@ -1,5 +1,20 @@
 // === Firebase Database 參考 ===
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.7.3/firebase-app.js";
+import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.7.3/firebase-analytics.js";
 import { getDatabase, ref, push, onValue, update, runTransaction } from "https://www.gstatic.com/firebasejs/11.7.3/firebase-database.js";
+
+// Firebase 設定
+const firebaseConfig = {
+  apiKey: "AIzaSyBpW90UQgv-WZT4Mv95dDLdKgp7R4xOVq0",
+  authDomain: "teammax2025afterparty.firebaseapp.com",
+  projectId: "teammax2025afterparty",
+  storageBucket: "teammax2025afterparty.firebasestorage.app",
+  messagingSenderId: "382059740232",
+  appId: "1:382059740232:web:36c40c582a58ad3908ec7d",
+  measurementId: "G-XZEY6P7K8Q"
+};
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
 const database = getDatabase();
 const messagesRef = ref(database, 'messages'); // Base reference to the 'messages' path
 
