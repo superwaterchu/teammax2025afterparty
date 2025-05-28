@@ -24,9 +24,54 @@ const nameInput = document.getElementById('name');
 const messageInput = document.getElementById('message');
 const messageCards = document.getElementById('message-cards');
 const loader = document.getElementById('loader');
+const emojiButton = document.getElementById('emoji-button');
+const selectedEmoji = document.getElementById('selected-emoji');
 
 // 本地存儲消息陣列
 let localMessages = []; // 僅作為快取用，實際資料來自 Firebase
+
+// 創建 emoji 選擇器
+function createEmojiPicker() {
+    const picker = document.createElement('div');
+    picker.className = 'emoji-picker';
+    document.body.appendChild(picker);
+
+    // 常用的表情符號列表
+    const emojis = [
+        '😊', '😂', '🥰', '😎', '🤩', '🥳', '😇', '🤗', '🤔', '🤓',
+        '😄', '😃', '😀', '😋', '😆', '😝', '🤪', '😜', '😛', '🤑',
+        '🌟', '✨', '💫', '⭐️', '🔥', '❤️', '🧡', '💛', '💚', '💙',
+        '💜', '🤍', '🖤', '💕', '💞', '💓', '💗', '💖', '💝', '💘'
+    ];
+
+    emojis.forEach(emoji => {
+        const option = document.createElement('div');
+        option.className = 'emoji-option';
+        option.textContent = emoji;
+        option.addEventListener('click', () => {
+            selectedEmoji.textContent = emoji;
+            picker.classList.remove('active');
+        });
+        picker.appendChild(option);
+    });
+
+    return picker;
+}
+
+// 初始化 emoji 選擇器
+const emojiPicker = createEmojiPicker();
+
+// 點擊 emoji 按鈕時顯示選擇器
+emojiButton.addEventListener('click', () => {
+    emojiPicker.classList.toggle('active');
+});
+
+// 點擊其他地方時關閉選擇器
+document.addEventListener('click', (e) => {
+    if (!emojiButton.contains(e.target) && !emojiPicker.contains(e.target)) {
+        emojiPicker.classList.remove('active');
+    }
+});
 
 // 初始化頁面
 document.addEventListener('DOMContentLoaded', () => {
@@ -65,12 +110,14 @@ messageForm.addEventListener('submit', async (e) => {
     console.log('表單提交開始');
     const name = nameInput.value.trim();
     const message = messageInput.value.trim();
+    const emoji = selectedEmoji.textContent;
     if (!name || !message) return;
     try {
         console.log('嘗試翻譯...');
         // 先顯示「翻譯中」
         const tempMessage = {
             name: name,
+            emoji: emoji,
             originalMessage: message,
             translations: {
                 original: message,
@@ -291,8 +338,11 @@ function displayMessage(message) {
     const cardHeader = document.createElement('div');
     cardHeader.className = 'card-header';
     cardHeader.innerHTML = `
-        <div class="card-author">${escapeHTML(message.name)}</div>
-        <div class="card-timestamp">${formattedDate} ${formattedTime}</div>
+        ${message.emoji ? `<div class="message-emoji">${message.emoji}</div>` : ''}
+        <div class="card-author-info">
+            <div class="card-author">${escapeHTML(message.name)}</div>
+            <div class="card-timestamp">${formattedDate} ${formattedTime}</div>
+        </div>
     `;
 
     // 建立翻譯標籤
